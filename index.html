@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1015" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="لعبة 2048 بالعربي: ادمج المربعات المتشابهة حتى تصل إلى 2048.">
+  <title>لعبة 2048</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23fbbf24'/%3E%3Ctext x='50' y='64' font-family='system-ui,sans-serif' font-size='34' font-weight='800' text-anchor='middle' fill='%23422006'%3E2048%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <div class="title">
+        <h1>2048</h1>
+        <p>ادمج المربعات المتشابهة حتى تصل إلى 2048</p>
+      </div>
+      <div class="scores">
+        <div id="score-box" class="score-box">
+          <span class="score-label">النتيجة</span>
+          <strong id="score" class="score-value">0</strong>
+        </div>
+        <div class="score-box">
+          <span class="score-label">الأفضل</span>
+          <strong id="best" class="score-value">0</strong>
+        </div>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <button type="button" id="new-game" class="btn btn-primary">لعبة جديدة</button>
+      <button type="button" id="undo" class="btn btn-secondary" disabled>تراجع</button>
+    </div>
+
+    <section id="board" class="board" dir="ltr" aria-label="لوحة اللعب">
+      <div id="cells" class="cells" aria-hidden="true"></div>
+      <div id="tiles" class="tiles" aria-hidden="true"></div>
+      <div id="overlay" class="overlay" dir="rtl" aria-live="polite" hidden>
+        <p id="overlay-title" class="overlay-title"></p>
+        <p id="overlay-text" class="overlay-text"></p>
+        <div class="overlay-actions">
+          <button type="button" id="overlay-primary" class="btn btn-primary"></button>
+          <button type="button" id="overlay-secondary" class="btn btn-secondary"></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card help">
+      <h2>طريقة اللعب</h2>
+      <ul>
+        <li>اسحب بإصبعك على اللوحة، أو استخدم الأسهم أو <span dir="ltr"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></span> في لوحة المفاتيح.</li>
+        <li>تتحرك كل المربعات في الاتجاه نفسه، وإذا التقى مربعان بالرقم نفسه اندمجا في مربع واحد قيمته مجموعهما.</li>
+        <li>بعد كل حركة يظهر مربع جديد (2 أو 4). تنتهي اللعبة إذا امتلأت اللوحة ولم تبقَ أي حركة ممكنة.</li>
+        <li>زر «تراجع» يلغي آخر حركة، ويعمل أيضاً بالاختصار <span dir="ltr"><kbd>Ctrl</kbd> + <kbd>Z</kbd></span>.</li>
+      </ul>
+    </section>
+
+    <footer class="app-footer">
+      <p>تُحفظ اللعبة وأفضل نتيجة في متصفحك، فتكمل من حيث توقفت.</p>
+      <p><a href="https://github.com/iLo0oL/game-2048">الشيفرة المصدرية على GitHub</a></p>
+    </footer>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
