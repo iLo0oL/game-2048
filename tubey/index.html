@@ -1245,6 +1245,7 @@ async function mountNative(id, my, start, origin) {
     }
     if (!r) continue;
     LS.set("vsrc", sv.k);
+    LS.set("nafail", 0);
     box.innerHTML = "";
     box.appendChild(v);
     const hls = r.hls;
@@ -1295,7 +1296,14 @@ async function mountNative(id, my, start, origin) {
     return;
   }
   if (!alive()) return;
-  toast("ما لقيت نسخة بدون إعلانات لهذا المقطع، شغّلته بمشغّل يوتيوب");
+  const nf_ = LS.get("nafail", 0) + 1;
+  LS.set("nafail", nf_);
+  if (nf_ >= 3) {
+    prefs.noads = false;
+    savePrefs();
+    LS.set("nafail", 0);
+    toast("المصادر المجانية محجوبة حاليًا، فرجّعت مشغّل يوتيوب. تقدر تفعّل «بدون إعلانات» من ⚙️ وتجرّب بعدين");
+  } else toast("ما لقيت نسخة بدون إعلانات لهذا المقطع، شغّلته بمشغّل يوتيوب");
   box.innerHTML = "";
   mountPlayer(id, my, start, origin);
 }
