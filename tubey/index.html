@@ -103,6 +103,9 @@ main{padding:4px 16px 40px}
 .osd .ot{display:flex;justify-content:space-between;direction:ltr;font-size:16px}
 .osd .hint{font-size:14px;opacity:.8;margin-top:8px}
 .player iframe,.player #ytp{position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;border:0}
+.vload{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#ddd;font-size:15px;background:#000}
+.vload .spin{margin-bottom:12px}
+.nvid{position:absolute;top:0;left:0;width:100%;height:100%;background:#000}
 .wtitle{font-size:20px;font-weight:800;margin:14px 0 10px;line-height:1.4}
 .wrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .chrow{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -273,6 +276,7 @@ body.tv .tvonly{display:inline-flex}
     <h2>⚙️ الإعدادات</h2>
     <div class="setrow"><span>الوضع الفاتح<small>بدّل بين الداكن والفاتح</small></span><div class="switch" id="swTheme" onclick="toggleTheme()"></div></div>
     <div class="setrow"><span>وضع التلفزيون<small>واجهة كبيرة وتنقّل بأسهم الريموت</small></span><div class="switch" id="swTv" onclick="toggleTv()"></div></div>
+    <div class="setrow"><span>بدون إعلانات<small>يشغّل الفيديو بمشغّل تيوبي. لو ما زبط مقطع، يرجع لمشغّل يوتيوب تلقائي</small></span><div class="switch" id="swNoads" onclick="toggleNoads()"></div></div>
     <div class="setrow"><span>التشغيل التلقائي<small>يشغّل المقطع التالي إذا خلص الحالي</small></span><div class="switch" id="swAuto" onclick="toggleAuto()"></div></div>
     <div class="setrow"><span>تجهيز الصوت مسبقًا<small>يخلي التحويل للخلفية فوري (يستهلك بيانات أكثر بشوي)</small></span><div class="switch" id="swPre" onclick="togglePre()"></div></div>
     <div class="setrow" id="installRow"><span>تثبيت التطبيق<small id="installHint">أضف تيوبي للشاشة الرئيسية</small></span><button class="btn sm red" onclick="installApp()">📲 تثبيت</button></div>
@@ -335,7 +339,7 @@ const LS = { get(k, d) {
 } };
 let KEY = LS.get("key", "");
 const st = { saved: LS.get("saved", []), hist: LS.get("hist", []), likes: LS.get("likes", {}), subs: LS.get("subs", []), my: LS.get("my", {}), cache: LS.get("cache", {}), pos: LS.get("pos", {}), queue: LS.get("queue", []), recentQ: LS.get("recentQ", []) };
-const prefs = Object.assign({ light: false, auto: true, pre: true }, LS.get("prefs", {}));
+const prefs = Object.assign({ light: false, auto: true, pre: true, noads: true }, LS.get("prefs", {}));
 let saveT;
 const save = () => {
   clearTimeout(saveT);
@@ -958,10 +962,25 @@ const ytReady = new Promise((r) => {
 })();
 function destroyYT() {
   try {
-    ytp && ytp.destroy && ytp.destroy();
+    PL && PL.destroy();
   } catch (e) {
   }
+  PL = null;
   ytp = null;
+}
+let PL = null;
+function onEnded() {
+  if (!W) return;
+  delete st.pos[W.id];
+  save();
+  if (SLEEP.eov) {
+    fireSleep();
+    return;
+  }
+  playNext(false);
+}
+function onPlaying() {
+  if (prefs.pre && !prefs.tv && W && (!PRE || PRE.id !== W.id)) prepAudio(W.id);
 }
 function leaveWatch() {
   destroyYT();
@@ -970,21 +989,21 @@ function leaveWatch() {
 }
 const ytState = () => {
   try {
-    return ytp && ytp.getPlayerState ? ytp.getPlayerState() : -1;
+    return PL ? PL.state() : -1;
   } catch (e) {
     return -1;
   }
 };
 const ytTime = () => {
   try {
-    return ytp && ytp.getCurrentTime ? ytp.getCurrentTime() : 0;
+    return PL ? PL.time() || 0 : 0;
   } catch (e) {
     return 0;
   }
 };
 const ytDur = () => {
   try {
-    return ytp && ytp.getDuration ? ytp.getDuration() : 0;
+    return PL ? PL.dur() || 0 : 0;
   } catch (e) {
     return 0;
   }
@@ -1019,7 +1038,8 @@ async function renderWatch(id, start) {
   </div><div class="side"><div id="qpanel"></div><div id="rel">${spinner}</div></div></div></main>`;
   paintInfo();
   paintQueue();
-  mountPlayer(id, my, start, origin);
+  if (prefs.noads && !route.yt) mountNative(id, my, start, origin);
+  else mountPlayer(id, my, start, origin);
   if (prefs.tv) setTimeout(() => {
     const pl = document.querySelector(".player");
     pl && pl.focus({ preventScroll: true });
@@ -1064,7 +1084,7 @@ function mountPlayer(id, my, start, origin) {
     if (done || my !== token) return;
     done = true;
     clearTimeout(fb);
-    ytp = new YT.Player("ytp", { videoId: id, playerVars: { autoplay: 1, rel: 0, playsinline: 1, start: Math.floor(start) }, events: {
+    const y = ytp = new YT.Player("ytp", { videoId: id, playerVars: { autoplay: 1, rel: 0, playsinline: 1, start: Math.floor(start) }, events: {
       onReady: (e) => {
         try {
           e.target.playVideo();
@@ -1072,19 +1092,222 @@ function mountPlayer(id, my, start, origin) {
         }
       },
       onStateChange: (e) => {
-        if (e.data === 1 && prefs.pre && !prefs.tv && W && (!PRE || PRE.id !== W.id)) prepAudio(W.id);
-        if (e.data === 0 && W) {
-          delete st.pos[W.id];
-          save();
-          if (SLEEP.eov) {
-            fireSleep();
-            return;
-          }
-          playNext(false);
-        }
+        if (e.data === 1) onPlaying();
+        if (e.data === 0) onEnded();
       }
     } });
+    PL = { kind: "yt", state: () => y.getPlayerState ? y.getPlayerState() : -1, time: () => y.getCurrentTime ? y.getCurrentTime() : 0, dur: () => y.getDuration ? y.getDuration() : 0, play: () => y.playVideo(), pause: () => y.pauseVideo(), seek: (t) => y.seekTo(t, true), destroy: () => y.destroy() };
+    if (W) paintInfo();
   });
+}
+let HLSLIB = null;
+function loadHls() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (HLSLIB) return HLSLIB;
+  HLSLIB = new Promise((res) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js";
+    sc.onload = () => res(window.Hls || null);
+    sc.onerror = () => {
+      HLSLIB = null;
+      res(null);
+    };
+    document.head.appendChild(sc);
+    setTimeout(() => res(window.Hls || null), 8e3);
+  });
+  return HLSLIB;
+}
+async function fetchJ(url, ms) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms || 7e3);
+  try {
+    const r = await fetch(url, { signal: c.signal });
+    return r.ok ? await r.json() : null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+async function videoSources(id) {
+  const insts = await invList();
+  const good = LS.get("inv", "");
+  const order = good ? [good].concat(insts.filter((x) => x !== good)) : insts;
+  let pj = null;
+  const pip = async () => {
+    if (pj !== null) return pj;
+    pj = false;
+    for (const p of PIPED.slice(0, 3)) {
+      try {
+        const j = await fetchJ(p + "/streams/" + id, 6e3);
+        if (j && (j.hls || (j.videoStreams || []).length)) {
+          pj = j;
+          break;
+        }
+      } catch (e) {
+      }
+    }
+    return pj;
+  };
+  const iv = (b, itag, k, q, ms) => async () => b ? { k, type: "file", url: b + "/latest_version?id=" + id + "&itag=" + itag + "&local=true", q, ms } : null;
+  const L = {
+    hls: async () => {
+      const j = await pip();
+      return j && j.hls ? { k: "hls", type: "hls", url: j.hls, q: "HD", ms: 12e3 } : null;
+    },
+    inv22: iv(order[0], 22, "inv22", "720p", 6e3),
+    inv18: iv(order[0], 18, "inv18", "360p"),
+    pipmux: async () => {
+      const j = await pip();
+      const m = j && (j.videoStreams || []).filter((x) => !x.videoOnly && x.url).sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0))[0];
+      return m ? { k: "pipmux", type: "file", url: m.url, q: m.quality } : null;
+    },
+    inv18b: iv(order[1], 18, "inv18b", "360p"),
+    inv18c: iv(order[2], 18, "inv18c", "360p")
+  };
+  let keys = ["hls", "inv22", "inv18", "pipmux", "inv18b", "inv18c"];
+  const g = LS.get("vsrc", "");
+  if (g && keys.indexOf(g) >= 0) keys = [g].concat(keys.filter((k) => k !== g));
+  return keys.map((k) => L[k]);
+}
+function tryVideo(v, src_) {
+  return new Promise(async (res) => {
+    let done = false, hls = null;
+    const fin = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      v.oncanplay = v.onerror = null;
+      if (!ok) {
+        if (hls) {
+          try {
+            hls.destroy();
+          } catch (e) {
+          }
+          hls = null;
+        }
+        v.removeAttribute("src");
+        try {
+          v.load();
+        } catch (e) {
+        }
+      }
+      res(ok ? { hls } : null);
+    };
+    const t = setTimeout(() => fin(false), src_.ms || 1e4);
+    v.oncanplay = () => fin(true);
+    v.onerror = () => fin(false);
+    if (src_.type === "hls") {
+      if (v.canPlayType("application/vnd.apple.mpegurl")) {
+        v.src = src_.url;
+        return;
+      }
+      const H = await loadHls();
+      if (done) return;
+      if (!H || !H.isSupported()) {
+        fin(false);
+        return;
+      }
+      hls = new H({ maxBufferLength: 30 });
+      hls.on(H.Events.ERROR, (e, d) => {
+        if (d && d.fatal) fin(false);
+      });
+      hls.loadSource(src_.url);
+      hls.attachMedia(v);
+    } else {
+      v.src = src_.url;
+      v.load();
+    }
+  });
+}
+async function mountNative(id, my, start, origin) {
+  const box = $("ytp");
+  if (!box) return;
+  box.innerHTML = '<div class="vload"><div class="spin"></div><div>جاري تجهيز الفيديو بدون إعلانات...</div></div>';
+  const v = document.createElement("video");
+  v.controls = true;
+  v.playsInline = true;
+  v.setAttribute("playsinline", "");
+  v.preload = "auto";
+  v.className = "nvid";
+  const alive = () => my === token && W && W.id === id;
+  for (const f of await videoSources(id)) {
+    if (!alive()) return;
+    let sv = null;
+    try {
+      sv = await f();
+    } catch (e) {
+    }
+    if (!sv || !alive()) continue;
+    const r = await tryVideo(v, sv);
+    if (!alive()) {
+      if (r && r.hls) r.hls.destroy();
+      v.removeAttribute("src");
+      return;
+    }
+    if (!r) continue;
+    LS.set("vsrc", sv.k);
+    box.innerHTML = "";
+    box.appendChild(v);
+    const hls = r.hls;
+    PL = {
+      kind: "native",
+      q: sv.q,
+      state: () => v.ended ? 0 : v.paused ? 2 : 1,
+      time: () => v.currentTime,
+      dur: () => isFinite(v.duration) ? v.duration : 0,
+      play: () => {
+        v.play().catch(() => {
+        });
+      },
+      pause: () => v.pause(),
+      seek: (t) => {
+        v.currentTime = t;
+      },
+      destroy: () => {
+        v.pause();
+        if (hls) {
+          try {
+            hls.destroy();
+          } catch (e) {
+          }
+        }
+        v.removeAttribute("src");
+        try {
+          v.load();
+        } catch (e) {
+        }
+      }
+    };
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("ended", onEnded);
+    if (start > 1) {
+      try {
+        v.currentTime = start;
+      } catch (e) {
+      }
+    }
+    v.play().catch(() => {
+      v.muted = true;
+      v.play().catch(() => {
+      });
+      toast("اضغط 🔊 عشان يطلع الصوت");
+    });
+    paintInfo();
+    return;
+  }
+  if (!alive()) return;
+  toast("ما لقيت نسخة بدون إعلانات لهذا المقطع، شغّلته بمشغّل يوتيوب");
+  box.innerHTML = "";
+  mountPlayer(id, my, start, origin);
+}
+function switchPlayer(toYT) {
+  if (!W) return;
+  const t = ytTime();
+  route = Object.assign({}, route, { start: t, yt: toYT });
+  try {
+    history.replaceState({ r: route }, "");
+  } catch (e) {
+  }
+  render();
 }
 function paintInfo() {
   if (!W) return;
@@ -1096,6 +1319,7 @@ function paintInfo() {
   <div class="actions">
     <button class="btn tvonly" onclick="setFull(true)">⛶ ملء الشاشة</button>
     <button class="btn bg" onclick="bgMode()">🎧 بالخلفية</button>
+    ${PL && PL.kind === "native" ? `<button class="btn" onclick="switchPlayer(true)" title="بدون إعلانات • ${esc(PL.q || "")}">🔁 مشغّل يوتيوب</button>` : PL && PL.kind === "yt" ? `<button class="btn" onclick="switchPlayer(false)">🚫 بدون إعلانات</button>` : ""}
     <button class="btn ${lk === 1 ? "on" : ""}" onclick="like(1)">👍 ${v.likes ? num(v.likes) : ""}</button>
     <button class="btn ${lk === -1 ? "on" : ""}" onclick="like(-1)">👎</button>
     <button class="btn ${inQ ? "on" : ""}" onclick="addQ('${id}');paintInfo()">${inQ ? "✓ بالقائمة" : "＋ قائمة"}</button>
@@ -1387,7 +1611,7 @@ async function bgMode(auto) {
   if (!W) return;
   const v = W.v, t = ytTime(), rel = W.related;
   try {
-    ytp && ytp.pauseVideo && ytp.pauseVideo();
+    PL && PL.pause();
   } catch (e) {
   }
   const wasW = W;
@@ -1514,7 +1738,7 @@ document.addEventListener("visibilitychange", () => {
     if (PRE && PRE.id === W.id) {
       const v = W.v, t = ytTime(), rel = W.related;
       try {
-        ytp.pauseVideo();
+        PL && PL.pause();
       } catch (e) {
       }
       leaveWatchSoft();
@@ -1564,7 +1788,7 @@ function fireSleep() {
   SLEEP.eov = false;
   aud.pause();
   try {
-    ytp && ytp.pauseVideo();
+    PL && PL.pause();
   } catch (e) {
   }
   stopShorts();
@@ -1663,6 +1887,7 @@ function openSettings() {
   $("swAuto").classList.toggle("on", prefs.auto);
   $("swPre").classList.toggle("on", prefs.pre);
   $("swTv").classList.toggle("on", !!prefs.tv);
+  $("swNoads").classList.toggle("on", !!prefs.noads);
   $("setModal").classList.add("open");
 }
 function applyTheme() {
@@ -1681,6 +1906,12 @@ function toggleAuto() {
   $("swAuto").classList.toggle("on", prefs.auto);
   paintQueue();
   toast(prefs.auto ? "التشغيل التلقائي شغّال" : "التشغيل التلقائي مقفّل");
+}
+function toggleNoads() {
+  prefs.noads = !prefs.noads;
+  savePrefs();
+  $("swNoads").classList.toggle("on", prefs.noads);
+  toast(prefs.noads ? "🚫 بدون إعلانات شغّال" : "رجع مشغّل يوتيوب");
 }
 function togglePre() {
   prefs.pre = !prefs.pre;
@@ -1788,14 +2019,14 @@ function showOsd() {
 }
 function toggleV() {
   try {
-    ytState() === 1 ? ytp.pauseVideo() : ytp.playVideo();
+    ytState() === 1 ? PL.pause() : PL.play();
   } catch (e) {
   }
   setTimeout(showOsd, 200);
 }
 function seekV(d) {
   try {
-    ytp.seekTo(Math.max(0, ytTime() + d), true);
+    PL.seek(Math.max(0, ytTime() + d));
   } catch (e) {
   }
   setTimeout(showOsd, 150);
