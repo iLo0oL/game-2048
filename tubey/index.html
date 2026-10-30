@@ -51,6 +51,9 @@ main{padding:4px 16px 40px}
 .paste input{flex:1;min-width:200px;background:#121212;border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:40px;font-size:15px;outline:none;direction:ltr;text-align:right}
 .watch{display:grid;grid-template-columns:1fr 400px;gap:24px;max-width:1700px;margin:0 auto;padding-top:16px}
 @media(max-width:1000px){.watch{grid-template-columns:1fr}}
+.watch>*{min-width:0}
+html,body{overflow-x:hidden}
+.search{min-width:0}
 .player{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9}
 .player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .wtitle{font-size:21px;font-weight:800;margin:14px 0 10px;line-height:1.4}
@@ -79,11 +82,23 @@ main{padding:4px 16px 40px}
 .box ol{padding-right:20px;font-size:14px;color:#ccc;margin-bottom:12px}
 .box input{width:100%;background:#121212;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px;font-size:15px;outline:none;direction:ltr}
 .box .acts{display:flex;gap:10px;margin-top:16px}
-.toast{position:fixed;bottom:20px;right:50%;transform:translateX(50%);background:#f1f1f1;color:#0f0f0f;padding:10px 18px;border-radius:8px;font-weight:700;opacity:0;transition:.3s;z-index:60;pointer-events:none}
+.mini{position:fixed;bottom:0;left:0;right:0;z-index:40;background:#212121;border-top:1px solid #333;display:none;align-items:center;gap:10px;padding:8px 12px}
+.mini.open{display:flex}
+.mini img{width:64px;height:36px;object-fit:cover;border-radius:6px;cursor:pointer}
+.mini .mt{flex:1;min-width:0;cursor:pointer}
+.mini .mt b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .mt small{color:var(--muted);font-size:12px}
+.mini .mb{height:3px;background:#444;position:absolute;top:0;left:0;right:0}
+.mini .mb i{display:block;height:100%;background:var(--red);width:0}
+.mini button{font-size:20px;width:40px;height:40px;border-radius:50%}
+.mini button:hover{background:#333}
+body.has-mini{padding-bottom:64px}
+.btn.bg{background:linear-gradient(135deg,#ff0033,#c2185b);color:#fff}
+.toast{position:fixed;bottom:80px;right:50%;transform:translateX(50%);background:#f1f1f1;color:#0f0f0f;padding:10px 18px;border-radius:8px;font-weight:700;opacity:0;transition:.3s;z-index:60;pointer-events:none}
 .toast.show{opacity:1}
 .loading{text-align:center;padding:40px;color:var(--muted)}
 .more{display:block;margin:28px auto 0}
-@media(max-width:640px){.logo .t,.btn .t{display:none}.side .thumb{width:140px}.chips{top:55px}}
+@media(max-width:640px){header{gap:6px;padding:10px}.btn{padding:9px 12px}.wrow .ch{width:100%}.logo .t,.btn .t{display:none}.side .thumb{width:140px}.chips{top:55px}}
 </style>
 </head>
 <body>
@@ -115,6 +130,15 @@ main{padding:4px 16px 40px}
     </div>
   </form>
 </div>
+<div class="mini" id="mini"><div class="mb"><i id="miniBar"></i></div>
+  <img id="miniImg" alt="" onclick="backToVideo()">
+  <div class="mt" onclick="backToVideo()"><b id="miniT"></b><small id="miniS"></small></div>
+  <button onclick="seekA(-10)" title="رجوع 10 ثواني">⏪</button>
+  <button id="miniPP" onclick="toggleA()">⏸</button>
+  <button onclick="seekA(10)" title="تقديم 10 ثواني">⏩</button>
+  <button onclick="stopA()" title="إغلاق">✕</button>
+</div>
+<audio id="aud" preload="none"></audio>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -212,16 +236,17 @@ function renderLibrary(){
   ${st.subs.length?`<div class="ptitle" style="margin-top:34px">🔔 اشتراكاتي</div><div style="display:flex;gap:10px;flex-wrap:wrap">${st.subs.map(c=>`<button class="btn" onclick="route={};document.getElementById('q').value='${esc(c.n).replace(/'/g,'')}';doSearch()">${esc(c.n)}</button>`).join('')}</div>`:''}</main>`;
 }
 
-async function renderWatch(id){
-  const my=++token;let v=st.cache[id]||{id,title:'',channel:''};
+async function renderWatch(id,start){
+  const my=++token;if(A.id)stopA(true);destroyYT();let v=st.cache[id]||{id,title:'',channel:''};
   st.hist=[id,...st.hist.filter(x=>x!==id)].slice(0,50);save();
   const origin=location.protocol.startsWith('http')?'&origin='+encodeURIComponent(location.origin):'';
   app.innerHTML=`<main><div class="watch"><div>
-    <div class="player"><iframe src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1${origin}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="YouTube"></iframe></div>
+    <div class="player"><div id="ytp"></div></div>
     <div id="info"></div>
     <div class="comments" id="cm"></div>
   </div><div class="side" id="side"><div class="loading">...</div></div></div></main>`;
   window.scrollTo(0,0);
+  mountPlayer(id,my,start||0,origin);
   const paintInfo=()=>{const lk=st.likes[id]||0,saved=st.saved.includes(id),sub=st.subs.some(c=>c.n===v.channel);
     document.getElementById('info').innerHTML=`<h1 class="wtitle">${esc(v.title)}</h1>
     <div class="wrow"><div class="ch">${av(v.channel)}<div><b>${esc(v.channel)}</b></div>
@@ -230,6 +255,7 @@ async function renderWatch(id){
       <button class="btn ${lk===-1?'on':''}" onclick="like(-1)">👎</button>
       <button class="btn ${saved?'on':''}" onclick="toggleSave()">${saved?'✓ محفوظ':'💾 حفظ'}</button>
       <button class="btn" onclick="copyLink()">↗ نسخ الرابط</button>
+      <button class="btn bg" onclick="bgMode()">🎧 تشغيل بالخلفية</button>
       <a class="btn" href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">▶ في يوتيوب</a>
     </div>
     ${v.desc||v.views?`<div class="desc" onclick="this.classList.toggle('open')"><b>${v.views?num(v.views)+' مشاهدة • ':''}${ago(v.date)}</b>${linkify(esc(v.desc))}</div>`:''}`};
@@ -263,8 +289,8 @@ async function loadComments(id,my){
 }
 
 /* ===== Actions ===== */
-function go(name,id){route={name,id};if(name!=='search')document.getElementById('q').value='';render()}
-function render(){const r=route;if(r.name==='watch')renderWatch(r.id);else if(r.name==='search')renderSearch(r.q);else if(r.name==='library')renderLibrary();else renderHome();window.scrollTo(0,0)}
+function go(name,id,start){route={name,id,start};if(name!=='search')document.getElementById('q').value='';render()}
+function render(){const r=route;if(r.name==='watch')renderWatch(r.id,r.start);else if(r.name==='search')renderSearch(r.q);else if(r.name==='library')renderLibrary();else renderHome();window.scrollTo(0,0)}
 function doSearch(){const q=document.getElementById('q').value.trim();if(!q)return;const id=ytId(q);if(id&&(q.length===11||/youtu/.test(q))){go('watch',id);return}
   route={name:'search',q};render()}
 function playPaste(){const id=ytId(document.getElementById('pasteIn').value);id?go('watch',id):toast('الرابط غير صحيح')}
@@ -276,6 +302,62 @@ function copyLink(){const u='https://youtu.be/'+_w.id;try{navigator.clipboard.wr
 function openKey(){document.getElementById('keyIn').value=KEY;document.getElementById('keyModal').classList.add('open')}
 function closeKey(){document.getElementById('keyModal').classList.remove('open')}
 function saveKey(){KEY=document.getElementById('keyIn').value.trim();LS.set('key',KEY);closeKey();toast(KEY?'تم حفظ المفتاح ✓':'تم حذف المفتاح');go('home')}
+/* ===== YouTube IFrame API player ===== */
+let ytp=null;const ytReady=new Promise(r=>{window.onYouTubeIframeAPIReady=r});
+(function(){const sc=document.createElement('script');sc.src='https://www.youtube.com/iframe_api';document.head.appendChild(sc)})();
+function destroyYT(){try{ytp&&ytp.destroy&&ytp.destroy()}catch(e){}ytp=null}
+function mountPlayer(id,my,start,origin){
+  let done=false;
+  const fb=setTimeout(()=>{if(done||my!==token)return;done=true;const el=document.getElementById('ytp');if(el)el.outerHTML=`<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1&start=${Math.floor(start)}${origin}" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`},6000);
+  ytReady.then(()=>{if(done||my!==token)return;done=true;clearTimeout(fb);
+    ytp=new YT.Player('ytp',{videoId:id,playerVars:{autoplay:1,rel:0,playsinline:1,start:Math.floor(start)},events:{onReady:e=>{try{e.target.playVideo()}catch(_){}}}})});
+}
+const ytPlaying=()=>{try{return ytp&&ytp.getPlayerState&&ytp.getPlayerState()===1}catch(e){return false}};
+const ytTime=()=>{try{return ytp&&ytp.getCurrentTime?ytp.getCurrentTime():0}catch(e){return 0}};
+
+/* ===== Background audio mode ===== */
+const aud=document.getElementById('aud');const A={id:null,v:null};
+const PIPED=['https://pipedapi.kavin.rocks','https://pipedapi.adminforge.de','https://api.piped.private.coffee','https://pipedapi.r4fo.com'];
+const fmtT=s=>{s=Math.floor(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return(h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s%60).padStart(2,'0')};
+function tryUrl(url){return new Promise(res=>{let ok=false;const fin=r=>{if(ok)return;ok=true;clearTimeout(t);aud.oncanplay=aud.onerror=null;res(r)};
+  const t=setTimeout(()=>fin(false),9000);aud.oncanplay=()=>fin(true);aud.onerror=()=>fin(false);aud.src=url;aud.load()})}
+async function* audioSources(id){
+  const insts=await invList();const good=LS.get('inv','');const order=good?[good,...insts.filter(x=>x!==good)]:insts;
+  const goodA=LS.get('aud','');if(goodA){if(goodA.startsWith('inv:'))yield [goodA,goodA.slice(4)+'/latest_version?id='+id+'&itag=140&local=true'];}
+  for(const b of order.slice(0,3))yield ['inv:'+b,b+'/latest_version?id='+id+'&itag=140&local=true'];
+  for(const p of PIPED){try{const c=new AbortController();setTimeout(()=>c.abort(),7000);const j=await (await fetch(p+'/streams/'+id,{signal:c.signal})).json();
+    const a=(j.audioStreams||[]).filter(x=>x.url).sort((x,y)=>(/mp4|m4a/.test(y.mimeType)-/mp4|m4a/.test(x.mimeType))||(y.bitrate-x.bitrate))[0];if(a)yield ['pip:'+p,a.url]}catch(e){}}
+  for(const b of order.slice(3,7))yield ['inv:'+b,b+'/latest_version?id='+id+'&itag=140&local=true'];
+}
+async function bgMode(auto){
+  const id=_w.id,v=_w.v;const t=ytTime();
+  try{ytp&&ytp.pauseVideo&&ytp.pauseVideo()}catch(e){}
+  A.id=id;A.v=v;showMini(v,'جاري تجهيز الصوت...');
+  for await(const [tag,url] of audioSources(id)){
+    if(A.id!==id)return;
+    if(await tryUrl(url)){LS.set('aud',tag);try{if(t>1)aud.currentTime=t}catch(e){}
+      try{await aud.play()}catch(e){}setMedia(v);toast('🎧 الحين تقدر تقفل الشاشة أو تطلع من المتصفح');return}
+  }
+  if(A.id===id){stopA(true);if(!auto)toast('ما قدرت أجيب الصوت الحين، جرّب بعد شوي');try{ytp&&ytp.playVideo()}catch(e){}}
+}
+function showMini(v,sub){document.getElementById('miniImg').src=thumb(v.id);document.getElementById('miniT').textContent=v.title||'مقطع';document.getElementById('miniS').textContent=sub||v.channel||'';document.getElementById('mini').classList.add('open');document.body.classList.add('has-mini')}
+function setMedia(v){if(!('mediaSession' in navigator))return;try{navigator.mediaSession.metadata=new MediaMetadata({title:v.title||'',artist:v.channel||'',album:'تيوبي',artwork:[{src:thumb(v.id),sizes:'480x360',type:'image/jpeg'}]});
+  const ms=navigator.mediaSession;ms.setActionHandler('play',()=>aud.play());ms.setActionHandler('pause',()=>aud.pause());
+  ms.setActionHandler('seekbackward',()=>seekA(-10));ms.setActionHandler('seekforward',()=>seekA(10));
+  try{ms.setActionHandler('seekto',e=>{aud.currentTime=e.seekTime})}catch(e){}}catch(e){}}
+function toggleA(){aud.paused?aud.play().catch(()=>{}):aud.pause()}
+function seekA(d){try{aud.currentTime=Math.max(0,Math.min((aud.duration||1e9),aud.currentTime+d))}catch(e){}}
+function stopA(silent){A.id=null;aud.pause();aud.removeAttribute('src');try{aud.load()}catch(e){}document.getElementById('mini').classList.remove('open');document.body.classList.remove('has-mini');try{navigator.mediaSession.metadata=null}catch(e){}}
+function backToVideo(){if(!A.id)return;const id=A.id,t=aud.currentTime||0;stopA(true);go('watch',id,t)}
+aud.addEventListener('play',()=>{document.getElementById('miniPP').textContent='⏸'});
+aud.addEventListener('pause',()=>{document.getElementById('miniPP').textContent='▶'});
+aud.addEventListener('timeupdate',()=>{if(!A.id)return;document.getElementById('miniS').textContent=fmtT(aud.currentTime)+' / '+fmtT(aud.duration)+' • '+(A.v.channel||'');
+  document.getElementById('miniBar').style.width=(aud.duration?aud.currentTime/aud.duration*100:0)+'%';
+  try{aud.duration&&navigator.mediaSession.setPositionState({duration:aud.duration,position:aud.currentTime,playbackRate:1})}catch(e){}});
+document.getElementById('miniBar').parentElement.onclick=e=>{const r=e.currentTarget.getBoundingClientRect();if(aud.duration)aud.currentTime=(r.right-e.clientX)/r.width*aud.duration};
+/* auto-switch to audio when leaving the page while a video is playing */
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&route.name==='watch'&&!A.id&&ytPlaying())bgMode(true)});
+
 document.addEventListener('paste',e=>{if(/INPUT|TEXTAREA/.test(e.target.tagName))return;const id=ytId(e.clipboardData.getData('text'));if(id)go('watch',id)});
 render();
 </script>
